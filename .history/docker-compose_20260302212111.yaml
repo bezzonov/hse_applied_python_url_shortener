@@ -8,8 +8,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=postgresql://postgres:password@postgres/url_shortener
       - REDIS_URL=redis://redis:6379

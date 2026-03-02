@@ -9,15 +9,10 @@ services:
       redis:
         condition: service_healthy
     env_file:
-      - .env
+      - .env  # ← ЧИТАЕТ .env файл!
     environment:
-      - DATABASE_URL=postgresql://postgres:password@postgres/url_shortener
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/url_shortener
       - REDIS_URL=redis://redis:6379
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   postgres:
     image: postgres:15

@@ -9,7 +9,7 @@ services:
       redis:
         condition: service_healthy
     env_file:
-      - .env
+      - .env  # ← ДОБАВЬТЕ ЭТУ СТРОКУ!
     environment:
       - DATABASE_URL=postgresql://postgres:password@postgres/url_shortener
       - REDIS_URL=redis://redis:6379

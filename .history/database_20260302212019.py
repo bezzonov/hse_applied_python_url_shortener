@@ -14,5 +14,6 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 rdb = redis.from_url(REDIS_URL)
 
+# Импортируем модели в конце
 from models import Base
 Base.metadata.create_all(bind=engine)
