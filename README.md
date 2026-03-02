@@ -32,7 +32,7 @@ GET: {"short_url":"http://localhost:8000/[YOUR CODE]",
 
 POST: curl http://localhost:8000/links/[YOUR CODE]/stats
 GET: {"original_url":"https://flowwow.com/",
-        "created_at":"2026-03-02 17:40:53.072191+00:00","clicks":0,"last_used_at":null,"expires_at":null}
+        "created_at":"2026-03-02 17:40:53.072191+00:00", "clicks":0, "last_used_at":null,"expires_at":null}
 ```
 
 ## Тестировать
