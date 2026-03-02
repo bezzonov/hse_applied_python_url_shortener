@@ -1,15 +1,13 @@
+# Исправленная версия CRUD.py
 import random
 import string
-import re
-from datetime import datetime
+import hashlib
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
-import redis
-import uuid
-
-# Импортируем ПОСЛЕ определения моделей
+from sqlalchemy import and_, or_
 from database import SessionLocal, rdb
 from models import Link
+import re
 
 def get_db():
     db = SessionLocal()
@@ -26,11 +24,13 @@ def generate_short_code(length=7):
             return code
 
 def link_exists(short_code: str) -> bool:
+    # Только Redis для быстрой проверки
     return rdb.exists(f"link:{short_code}")
 
 def create_link(original_url: str, custom_alias: str = None, expires_at: datetime = None, user_id: str = None):
     db = SessionLocal()
     try:
+        # Проверяем custom_alias
         if custom_alias:
             if not re.match(r'^[a-zA-Z0-9]{4,10}$', custom_alias):
                 raise ValueError("Invalid alias format")
@@ -52,40 +52,37 @@ def create_link(original_url: str, custom_alias: str = None, expires_at: datetim
         db.commit()
         db.refresh(link)
 
-        # Кэш в Redis
-        ttl = 3600
+        # Кэшируем ID ссылки
+        cache_ttl = 3600
         if expires_at and expires_at < datetime.utcnow():
-            ttl = 60
-        rdb.setex(f"link:{link.short_code}", ttl, str(link.id))
+            cache_ttl = 60  # короткий TTL для истекающих
+        rdb.setex(f"link:{link.short_code}", cache_ttl, link.id)
 
         return link
     finally:
         db.close()
 
 def get_link(short_code: str, db: Session):
-    # Redis cache
+    # Сначала Redis
     cached_id = rdb.get(f"link:{short_code}")
     if cached_id:
         link = db.query(Link).filter(Link.id == cached_id.decode()).first()
-        if link:
-            return link
-
-    # Database lookup
-    link = db.query(Link).filter(
-        Link.short_code == short_code,
-        Link.deleted_at.is_(None),
-        or_(Link.expires_at.is_(None), Link.expires_at > datetime.utcnow())
-    ).first()
+    else:
+        link = db.query(Link).filter(
+            Link.short_code == short_code,
+            Link.deleted_at.is_(None),
+            or_(Link.expires_at.is_(None), Link.expires_at > datetime.utcnow())
+        ).first()
 
     if link:
         link.click_count += 1
         link.last_used_at = datetime.utcnow()
         db.commit()
-        rdb.setex(f"link:{short_code}", 3600, str(link.id))
+        rdb.setex(f"link:{link.short_code}", 3600, link.id)
+        return link
+    return None
 
-    return link
-
-def delete_link(short_code: str, user_id: str = None, db: Session = None):
+def delete_link(short_code: str, user_id: str | None = None, db: Session | None = None):
     if not db:
         db = SessionLocal()
         local_db = True
@@ -93,17 +90,17 @@ def delete_link(short_code: str, user_id: str = None, db: Session = None):
         local_db = False
 
     try:
+        # Удаляем из Redis
         rdb.delete(f"link:{short_code}")
+
+        # Soft delete с проверкой владельца
         query = db.query(Link).filter(
             Link.short_code == short_code,
             Link.deleted_at.is_(None)
         )
         if user_id:
             query = query.filter(
-                or_(
-                    Link.user_id == user_id,
-                    and_(Link.is_anonymous == True, Link.user_id.is_(None))
-                )
+                or_(Link.user_id == user_id, and_(Link.is_anonymous == True, Link.user_id.is_(None)))
             )
 
         link = query.first()
@@ -114,7 +111,7 @@ def delete_link(short_code: str, user_id: str = None, db: Session = None):
         if local_db:
             db.close()
 
-def update_link(short_code: str, new_url: str, user_id: str = None, db: Session = None):
+def update_link(short_code: str, new_url: str, user_id: str | None = None, db: Session | None = None):
     if not db:
         db = SessionLocal()
         local_db = True
@@ -127,21 +124,25 @@ def update_link(short_code: str, new_url: str, user_id: str = None, db: Session 
             Link.deleted_at.is_(None)
         )
         if user_id:
-            query = query.filter(Link.user_id == user_id)
+            query = query.filter(
+                or_(Link.user_id == user_id, and_(Link.is_anonymous == True, Link.user_id.is_(None)))
+            )
 
         link = query.first()
         if not link:
-            raise ValueError("Link not found")
+            raise HTTPException(status_code=404, detail="Link not found or access denied")
 
         link.original_url = new_url
         db.commit()
-        rdb.setex(f"link:{short_code}", 3600, str(link.id))
+
+        # Обновляем кэш
+        rdb.setex(f"link:{short_code}", 3600, link.id)
         return link
     finally:
         if local_db:
             db.close()
 
-def search_links(original_url: str, user_id: str = None, db: Session = None):
+def search_links(original_url: str, user_id: str = None, db: Session | None = None):
     if not db:
         db = SessionLocal()
         local_db = True

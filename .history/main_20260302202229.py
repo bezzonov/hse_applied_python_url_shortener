@@ -4,13 +4,11 @@ from pydantic import BaseModel, HttpUrl
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
-from sqlalchemy import or_
-import uuid
-
-# Импорты в конце, чтобы избежать циклических зависимостей
-from crud import create_link, get_link, delete_link, update_link, search_links, get_db
+from crud import (
+    create_link, get_link, delete_link, update_link, search_links, get_db
+)
 from database import SessionLocal
-from models import Link
+# НЕ импортируем models здесь - избегаем циклических импортов
 
 app = FastAPI(title="URL Shortener API")
 
@@ -26,17 +24,14 @@ class UpdateRequest(BaseModel):
 async def health_check():
     return {"status": "healthy"}
 
-@app.get("/docs")
-async def docs():
-    return {"message": "API documentation at /docs"}
-
 @app.post("/links/shorten")
 async def shorten(request: ShortenRequest, db: Session = Depends(get_db)):
     try:
         link = create_link(
             str(request.original_url),
             request.custom_alias,
-            request.expires_at
+            request.expires_at,
+            user_id=None  # Пока анонимно
         )
         return {
             "short_url": f"http://localhost:8000/{link.short_code}",
@@ -54,33 +49,42 @@ async def redirect_to_original(short_code: str, db: Session = Depends(get_db)):
 
 @app.get("/links/{short_code}/stats")
 async def get_stats(short_code: str, db: Session = Depends(get_db)):
-    try:
-        # Простой запрос БЕЗ or_
-        link = db.query(Link).filter(Link.short_code == short_code).first()
-        if not link:
-            raise HTTPException(status_code=404, detail="Link not found")
+    # Получаем ссылку без инкремента кликов для статистики
+    link = db.query(Link).filter(
+        Link.short_code == short_code,
+        Link.deleted_at.is_(None),
+        or_(Link.expires_at.is_(None), Link.expires_at > datetime.utcnow())
+    ).first()
 
-        return {
-            "original_url": link.original_url,
-            "created_at": str(link.created_at),
-            "clicks": link.click_count or 0,
-            "last_used_at": str(link.last_used_at) if link.last_used_at else None,
-            "expires_at": str(link.expires_at) if link.expires_at else None
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+
+    return {
+        "original_url": link.original_url,
+        "created_at": link.created_at,
+        "clicks": link.click_count,
+        "last_used_at": link.last_used_at,
+        "expires_at": link.expires_at
+    }
 
 @app.delete("/links/{short_code}")
 async def delete_link_endpoint(short_code: str, db: Session = Depends(get_db)):
-    delete_link(short_code, db=db)
-    return {"message": "Link deleted"}
+    delete_link(short_code, user_id=None, db=db)
+    return {"message": "Link deleted successfully"}
 
 @app.put("/links/{short_code}")
-async def update_link_endpoint(short_code: str, request: UpdateRequest, db: Session = Depends(get_db)):
-    update_link(short_code, str(request.original_url), db=db)
-    return {"message": "Link updated"}
+async def update_link_endpoint(
+    short_code: str,
+    request: UpdateRequest,
+    db: Session = Depends(get_db)
+):
+    link = update_link(short_code, str(request.original_url), user_id=None, db=db)
+    return {"message": "Link updated successfully"}
 
 @app.get("/links/search")
-async def search_endpoint(original_url: str = Query(...), db: Session = Depends(get_db)):
-    links = search_links(original_url, db=db)
-    return [{"short_code": link.short_code} for link in links]
+async def search_endpoint(
+    original_url: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    links = search_links(original_url, user_id=None, db=db)
+    return [{"short_code": link.short_code, "created_at": link.created_at} for link in links]
