@@ -6,8 +6,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 import redis
 import uuid
-
-# Импортируем ПОСЛЕ определения моделей
 from src.database import SessionLocal, rdb
 from src.models import Link
 
@@ -63,14 +61,11 @@ def create_link(original_url: str, custom_alias: str = None, expires_at: datetim
         db.close()
 
 def get_link(short_code: str, db: Session):
-    # Redis cache
     cached_id = rdb.get(f"link:{short_code}")
     if cached_id:
         link = db.query(Link).filter(Link.id == cached_id.decode()).first()
         if link:
             return link
-
-    # Database lookup
     link = db.query(Link).filter(
         Link.short_code == short_code,
         Link.deleted_at.is_(None),

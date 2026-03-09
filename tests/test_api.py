@@ -3,7 +3,6 @@ import requests
 from unittest.mock import patch, Mock
 from src.main import app
 
-# Простой тест БЕЗ TestClient
 def test_health_check():
     """Тест /health через requests."""
     response = requests.get("http://localhost:8000/health")

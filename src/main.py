@@ -7,7 +7,6 @@ from datetime import datetime
 from sqlalchemy import or_
 import uuid
 
-# Импорты в конце, чтобы избежать циклических зависимостей
 from src.crud import create_link, get_link, delete_link, update_link, search_links, get_db
 from src.database import SessionLocal
 from src.models import Link
@@ -55,7 +54,6 @@ async def redirect_to_original(short_code: str, db: Session = Depends(get_db)):
 @app.get("/links/{short_code}/stats")
 async def get_stats(short_code: str, db: Session = Depends(get_db)):
     try:
-        # Простой запрос БЕЗ or_
         link = db.query(Link).filter(Link.short_code == short_code).first()
         if not link:
             raise HTTPException(status_code=404, detail="Link not found")
