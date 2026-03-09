@@ -51,7 +51,11 @@ pytest tests/ --html=report.html --self-contained-html --cov=src/ --cov-report=h
 
 ## Структура тестов
 tests/
+
 ├── test_api.py      # FastAPI endpoints (2 теста)
+
 ├── test_crud.py     # CRUD функции (1 тест)
+
 ├── test_models.py   # SQLAlchemy модели (1 тест)
+
 └── conftest.py      # Фикстуры (mock Redis)
